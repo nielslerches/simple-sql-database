@@ -93,7 +93,7 @@ impl Relation for Projection {
     }
 }
 
-fn query_as_relation(query: &Box<Query>) -> Box<dyn Relation> {
+fn query_as_relation(query: &Box<Query>) -> Box<dyn Relation<Item = Vec<String>>> {
     match query.body.as_ref() {
         SetExpr::Select(select) => {
             let table_with_joins = select.from.first().expect("FROM must be provided.");
@@ -170,9 +170,12 @@ fn main() {
     for statement in ast.iter() {
         match statement {
             Statement::Query(query) => {
-                let relation = query_as_relation(query);
+                let mut relation = query_as_relation(query);
+                let attributes = relation.attributes();
 
                 let mut writer = csv::Writer::from_writer(io::stdout());
+
+                writer.write_record(attributes).expect("Could not write CSV-header to STDOUT.");
 
                 for row in relation {
                     let record = csv::StringRecord::from(row);
