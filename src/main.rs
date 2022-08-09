@@ -4,7 +4,7 @@ use std::ops::Index;
 
 use csv;
 
-use sqlparser::ast::{Query, SetExpr, Statement, TableFactor, SelectItem, Expr};
+use sqlparser::ast::{Expr, Query, SelectItem, SetExpr, Statement, TableFactor};
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
 
@@ -113,7 +113,8 @@ fn query_as_relation(query: &Box<Query>) -> Box<dyn Relation<Item = Vec<String>>
                         .collect::<Vec<String>>()
                         .join(".");
 
-                    let mut relation: Box<dyn Relation<Item = Vec<String>>> = Box::new(SequentialScan::from_path(&filename));
+                    let mut relation: Box<dyn Relation<Item = Vec<String>>> =
+                        Box::new(SequentialScan::from_path(&filename));
 
                     if !select.projection.is_empty() {
                         relation = Box::new(project_relation(select.projection.clone(), relation));
@@ -132,26 +133,36 @@ fn query_as_relation(query: &Box<Query>) -> Box<dyn Relation<Item = Vec<String>>
     }
 }
 
-fn project_relation(projection: Vec<SelectItem>, relation: Box<dyn Relation<Item = Vec<String>>>) -> Projection {
+fn project_relation(
+    projection: Vec<SelectItem>,
+    relation: Box<dyn Relation<Item = Vec<String>>>,
+) -> Projection {
     Projection {
-        projected: projection.iter().map(|select_item| {
-            match select_item {
-                SelectItem::UnnamedExpr(expr) => {
-                    match expr {
-                        Expr::Identifier(ident) => {
-                            (ident.value.clone(), ident.value.clone())
-                        },
-                        _ => {
-                            unimplemented!()
-                        }
-                    }
-                },
-                _ => {
-                    unimplemented!()
-                }
-            }
-        }).collect(),
+        projected: projection
+            .iter()
+            .map(|select_item| project_select_item(select_item))
+            .collect(),
         relation,
+    }
+}
+
+fn project_select_item(select_item: &SelectItem) -> (String, String) {
+    match select_item {
+        SelectItem::UnnamedExpr(expr) => match expr {
+            Expr::Identifier(ident) => (ident.value.clone(), ident.value.clone()),
+            _ => {
+                unimplemented!()
+            }
+        },
+        SelectItem::ExprWithAlias { expr, alias } => match expr {
+            Expr::Identifier(ident) => (ident.value.clone(), alias.value.clone()),
+            _ => {
+                unimplemented!()
+            }
+        },
+        _ => {
+            unimplemented!()
+        }
     }
 }
 
@@ -175,7 +186,9 @@ fn main() {
 
                 let mut writer = csv::Writer::from_writer(io::stdout());
 
-                writer.write_record(attributes).expect("Could not write CSV-header to STDOUT.");
+                writer
+                    .write_record(attributes)
+                    .expect("Could not write CSV-header to STDOUT.");
 
                 for row in relation {
                     let record = csv::StringRecord::from(row);
@@ -183,7 +196,7 @@ fn main() {
                         .write_record(&record)
                         .expect("Could not write result to stdout.");
                 }
-            },
+            }
             _ => {
                 unimplemented!()
             }
