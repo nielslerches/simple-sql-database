@@ -8,7 +8,14 @@ use sqlparser::ast::{Expr, Query, SelectItem, SetExpr, Statement, TableFactor};
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
 
-trait Relation: Iterator<Item = Vec<String>> {
+#[derive(Clone)]
+enum Value {
+    String(String),
+    Boolean(bool),
+    Integer(i64),
+}
+
+trait Relation: Iterator<Item = Vec<Value>> {
     fn attributes(&mut self) -> Vec<String>;
 }
 
@@ -26,13 +33,21 @@ impl SequentialScan {
 }
 
 impl Iterator for SequentialScan {
-    type Item = Vec<String>;
+    type Item = Vec<Value>;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.reader.records().next() {
             Some(result) => match result {
                 Ok(record) => {
-                    let item = Vec::from_iter(record.iter().map(|s| s.to_owned()));
+                    let item = Vec::from_iter(record.iter().map(|s| s.to_owned()).map(|s| {
+                        if let Ok(boolean) = s.parse::<bool>() {
+                            Value::Boolean(boolean)
+                        } else if let Ok(integer) = s.parse::<i64>() {
+                            Value::Integer(integer)
+                        } else {
+                            Value::String(s)
+                        }
+                    }));
                     Some(item)
                 }
                 Err(err) => {
@@ -57,12 +72,12 @@ impl Relation for SequentialScan {
 }
 
 struct Projection {
-    projected: Vec<(String, String)>,
-    relation: Box<dyn Relation<Item = Vec<String>>>,
+    projected: Vec<SelectItem>,
+    relation: Box<dyn Relation<Item = Vec<Value>>>,
 }
 
 impl Iterator for Projection {
-    type Item = Vec<String>;
+    type Item = Vec<Value>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let relation_attributes: Vec<String> = self.relation.attributes();
@@ -71,13 +86,33 @@ impl Iterator for Projection {
             Some(relation_item) => {
                 let mut item = Vec::new();
 
-                for (source, _) in self.projected.iter() {
-                    let source_position = relation_attributes
-                        .iter()
-                        .position(|relation_attribute| relation_attribute.eq(source))
-                        .unwrap();
+                for select_item in self.projected.iter() {
+                    if *select_item == SelectItem::Wildcard {
+                        for attribute in &relation_attributes {
+                            let source_position = relation_attributes
+                            .iter()
+                            .position(|relation_attribute| relation_attribute.eq(attribute))
+                            .unwrap();
 
-                    item.push(relation_item.index(source_position).clone());
+                            item.push(relation_item.index(source_position).clone());
+                        }
+                    } else {
+                        let select_item_name = match select_item {
+                            SelectItem::ExprWithAlias { alias, .. } => alias.value.clone(),
+                            SelectItem::UnnamedExpr(expr) => match expr {
+                                Expr::Identifier(ident) => ident.value.clone(),
+                                _ => unreachable!()
+                            }
+                            _ => unimplemented!()
+                        };
+
+                        let source_position = relation_attributes
+                            .iter()
+                            .position(|relation_attribute| relation_attribute.eq(&select_item_name))
+                            .unwrap();
+
+                        item.push(relation_item.index(source_position).clone());
+                    }
                 }
 
                 Some(item)
@@ -89,11 +124,33 @@ impl Iterator for Projection {
 
 impl Relation for Projection {
     fn attributes(&mut self) -> Vec<String> {
-        Vec::from_iter(self.projected.iter().map(|(_, target)| target.clone()))
+        let mut attributes: Vec<String> = Vec::new();
+
+        for select_item in self.projected.iter() {
+            match select_item {
+                SelectItem::ExprWithAlias { alias, .. } => {
+                    attributes.push(alias.value.clone());
+                }
+                SelectItem::UnnamedExpr(expr) => match expr {
+                    Expr::Identifier(ident) => {
+                        attributes.push(ident.value.clone());
+                    }
+                    _ => unimplemented!()
+                }
+                SelectItem::Wildcard => {
+                    for attribute in self.relation.attributes() {
+                        attributes.push(attribute);
+                    }
+                }
+                _ => unimplemented!()
+            }
+        }
+
+        attributes
     }
 }
 
-fn query_as_relation(query: &Box<Query>) -> Box<dyn Relation<Item = Vec<String>>> {
+fn query_as_relation(query: &Box<Query>) -> Box<dyn Relation<Item = Vec<Value>> + 'static> {
     match query.body.as_ref() {
         SetExpr::Select(select) => {
             let table_with_joins = select.from.first().expect("FROM must be provided.");
@@ -113,7 +170,7 @@ fn query_as_relation(query: &Box<Query>) -> Box<dyn Relation<Item = Vec<String>>
                         .collect::<Vec<String>>()
                         .join(".");
 
-                    let mut relation: Box<dyn Relation<Item = Vec<String>>> =
+                    let mut relation: Box<dyn Relation<Item = Vec<Value>> + 'static> =
                         Box::new(SequentialScan::from_path(&filename));
 
                     if !select.projection.is_empty() {
@@ -135,34 +192,11 @@ fn query_as_relation(query: &Box<Query>) -> Box<dyn Relation<Item = Vec<String>>
 
 fn project_relation(
     projection: Vec<SelectItem>,
-    relation: Box<dyn Relation<Item = Vec<String>>>,
+    relation: Box<dyn Relation<Item = Vec<Value>>>,
 ) -> Projection {
     Projection {
-        projected: projection
-            .iter()
-            .map(|select_item| project_select_item(select_item))
-            .collect(),
+        projected: projection,
         relation,
-    }
-}
-
-fn project_select_item(select_item: &SelectItem) -> (String, String) {
-    match select_item {
-        SelectItem::UnnamedExpr(expr) => match expr {
-            Expr::Identifier(ident) => (ident.value.clone(), ident.value.clone()),
-            _ => {
-                unimplemented!()
-            }
-        },
-        SelectItem::ExprWithAlias { expr, alias } => match expr {
-            Expr::Identifier(ident) => (ident.value.clone(), alias.value.clone()),
-            _ => {
-                unimplemented!()
-            }
-        },
-        _ => {
-            unimplemented!()
-        }
     }
 }
 
@@ -191,7 +225,17 @@ fn main() {
                     .expect("Could not write CSV-header to STDOUT.");
 
                 for row in relation {
-                    let record = csv::StringRecord::from(row);
+                    let record = csv::StringRecord::from_iter(row.iter().map(|v| match v {
+                        Value::String(s) => s.to_owned(),
+                        Value::Boolean(b) => {
+                            if *b {
+                                "true".to_owned()
+                            } else {
+                                "false".to_owned()
+                            }
+                        }
+                        Value::Integer(i) => i.to_string(),
+                    }));
                     writer
                         .write_record(&record)
                         .expect("Could not write result to stdout.");
