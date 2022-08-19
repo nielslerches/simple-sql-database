@@ -89,6 +89,8 @@ impl Iterator for Projection {
                 let mut item = Vec::new();
 
                 for select_item in self.projected.iter() {
+                    // TODO: handle arbitrary expressions.
+
                     if *select_item == SelectItem::Wildcard {
                         for attribute in &relation_attributes {
                             let source_position = relation_attributes
