@@ -4,7 +4,9 @@ use std::ops::Index;
 
 use csv;
 
-use sqlparser::ast::{Expr, Query, SelectItem, SetExpr, Statement, TableFactor};
+use sqlparser::ast::{
+    BinaryOperator, Expr, Query, SelectItem, SetExpr, Statement, TableFactor, Value as Literal,
+};
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
 
@@ -150,6 +152,98 @@ impl Relation for Projection {
     }
 }
 
+struct Selection {
+    selection: Expr,
+    relation: Box<dyn Relation<Item = Vec<Value>>>,
+}
+
+impl Iterator for Selection {
+    type Item = Vec<Value>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut item: Option<Self::Item> = None;
+
+        loop {
+            match self.relation.next() {
+                None => break,
+                Some(relation_item) => {
+                    // TODO: "compile" selection expr into callable and cache it.
+
+                    if !eval_value_as_bool(eval_expr_on_row(self.selection.clone(), &self.relation.attributes(), &relation_item))
+                    {
+                        continue;
+                    }
+
+                    item = Some(relation_item);
+                    break;
+                }
+            }
+        }
+
+        item
+    }
+}
+
+impl Relation for Selection {
+    fn attributes(&mut self) -> Vec<String> {
+        self.relation.attributes()
+    }
+}
+
+fn eval_expr_on_row(expr: Expr, relation_attributes: &Vec<String>, row: &Vec<Value>) -> Value {
+    match expr {
+        Expr::BinaryOp { left, op, right } => {
+            let left_value = eval_expr_on_row(*left, relation_attributes, row);
+            let right_value = eval_expr_on_row(*right, relation_attributes, row);
+
+            match op {
+                BinaryOperator::And => Value::Boolean(
+                    eval_value_as_bool(left_value.into()) && eval_value_as_bool(right_value.into()),
+                ),
+                BinaryOperator::Or => Value::Boolean(
+                    eval_value_as_bool(left_value.into()) || eval_value_as_bool(right_value.into()),
+                ),
+                BinaryOperator::Gt => Value::Boolean(match left_value {
+                    Value::Integer(left_int) => {
+                        left_int
+                            > match right_value {
+                                Value::Integer(right_int) => right_int,
+                                _ => unimplemented!(),
+                            }
+                    }
+                    _ => unimplemented!(),
+                }),
+                _ => unimplemented!(),
+            }
+        }
+        Expr::Identifier(ident) => {
+            let source_position = relation_attributes
+                .iter()
+                .position(|relation_attribute| relation_attribute.eq(&ident.value))
+                .unwrap();
+
+            (*row.index(source_position)).to_owned()
+        }
+        Expr::Value(literal) => match literal {
+            Literal::Boolean(b) => Value::Boolean(b),
+            Literal::DoubleQuotedString(s) | Literal::SingleQuotedString(s) => Value::String(s),
+            Literal::Number(s, _) => {
+                Value::Integer(s.parse::<i64>().expect("Could not parse number into i64."))
+            }
+            _ => unimplemented!(),
+        },
+        _ => unimplemented!("{expr:?}"),
+    }
+}
+
+fn eval_value_as_bool(value: Value) -> bool {
+    match value {
+        Value::Boolean(b) => b,
+        Value::Integer(i) => i != 0,
+        Value::String(s) => s.len() > 0,
+    }
+}
+
 fn query_as_relation(query: &Box<Query>) -> Box<dyn Relation<Item = Vec<Value>> + 'static> {
     match query.body.as_ref() {
         SetExpr::Select(select) => {
@@ -172,6 +266,13 @@ fn query_as_relation(query: &Box<Query>) -> Box<dyn Relation<Item = Vec<Value>> 
 
                     let mut relation: Box<dyn Relation<Item = Vec<Value>> + 'static> =
                         Box::new(SequentialScan::from_path(&filename));
+
+                    if let Some(selection) = &select.selection {
+                        relation = Box::new(Selection {
+                            selection: selection.to_owned(),
+                            relation,
+                        });
+                    }
 
                     if !select.projection.is_empty() {
                         relation = Box::new(project_relation(select.projection.clone(), relation));
