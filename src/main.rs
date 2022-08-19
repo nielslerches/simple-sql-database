@@ -90,9 +90,9 @@ impl Iterator for Projection {
                     if *select_item == SelectItem::Wildcard {
                         for attribute in &relation_attributes {
                             let source_position = relation_attributes
-                            .iter()
-                            .position(|relation_attribute| relation_attribute.eq(attribute))
-                            .unwrap();
+                                .iter()
+                                .position(|relation_attribute| relation_attribute.eq(attribute))
+                                .unwrap();
 
                             item.push(relation_item.index(source_position).clone());
                         }
@@ -101,9 +101,9 @@ impl Iterator for Projection {
                             SelectItem::ExprWithAlias { alias, .. } => alias.value.clone(),
                             SelectItem::UnnamedExpr(expr) => match expr {
                                 Expr::Identifier(ident) => ident.value.clone(),
-                                _ => unreachable!()
-                            }
-                            _ => unimplemented!()
+                                _ => unreachable!(),
+                            },
+                            _ => unimplemented!(),
                         };
 
                         let source_position = relation_attributes
@@ -135,14 +135,14 @@ impl Relation for Projection {
                     Expr::Identifier(ident) => {
                         attributes.push(ident.value.clone());
                     }
-                    _ => unimplemented!()
-                }
+                    _ => unimplemented!(),
+                },
                 SelectItem::Wildcard => {
                     for attribute in self.relation.attributes() {
                         attributes.push(attribute);
                     }
                 }
-                _ => unimplemented!()
+                _ => unimplemented!(),
             }
         }
 
@@ -241,9 +241,7 @@ fn main() {
                         .expect("Could not write result to stdout.");
                 }
             }
-            _ => {
-                unimplemented!()
-            }
+            _ => unimplemented!(),
         }
     }
 }
