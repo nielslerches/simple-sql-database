@@ -169,8 +169,11 @@ impl Iterator for Selection {
                 Some(relation_item) => {
                     // TODO: "compile" selection expr into callable and cache it.
 
-                    if !eval_value_as_bool(eval_expr_on_row(self.selection.clone(), &self.relation.attributes(), &relation_item))
-                    {
+                    if !eval_value_as_bool(eval_expr_on_row(
+                        self.selection.clone(),
+                        &self.relation.attributes(),
+                        &relation_item,
+                    )) {
                         continue;
                     }
 
@@ -203,10 +206,86 @@ fn eval_expr_on_row(expr: Expr, relation_attributes: &Vec<String>, row: &Vec<Val
                 BinaryOperator::Or => Value::Boolean(
                     eval_value_as_bool(left_value.into()) || eval_value_as_bool(right_value.into()),
                 ),
+                BinaryOperator::Eq => Value::Boolean(match left_value {
+                    Value::Integer(left_int) => {
+                        left_int
+                            == match right_value {
+                                Value::Integer(right_int) => right_int,
+                                _ => unimplemented!(),
+                            }
+                    }
+                    Value::Boolean(left_bool) => {
+                        left_bool
+                            == match right_value {
+                                Value::Boolean(right_bool) => right_bool,
+                                _ => unimplemented!(),
+                            }
+                    }
+                    Value::String(left_string) => {
+                        left_string
+                            == match right_value {
+                                Value::String(right_string) => right_string,
+                                _ => unimplemented!(),
+                            }
+                    }
+                }),
+                BinaryOperator::NotEq => Value::Boolean(match left_value {
+                    Value::Integer(left_int) => {
+                        left_int
+                            != match right_value {
+                                Value::Integer(right_int) => right_int,
+                                _ => unimplemented!(),
+                            }
+                    }
+                    Value::Boolean(left_bool) => {
+                        left_bool
+                            != match right_value {
+                                Value::Boolean(right_bool) => right_bool,
+                                _ => unimplemented!(),
+                            }
+                    }
+                    Value::String(left_string) => {
+                        left_string
+                            != match right_value {
+                                Value::String(right_string) => right_string,
+                                _ => unimplemented!(),
+                            }
+                    }
+                }),
                 BinaryOperator::Gt => Value::Boolean(match left_value {
                     Value::Integer(left_int) => {
                         left_int
                             > match right_value {
+                                Value::Integer(right_int) => right_int,
+                                _ => unimplemented!(),
+                            }
+                    }
+                    _ => unimplemented!(),
+                }),
+                BinaryOperator::GtEq => Value::Boolean(match left_value {
+                    Value::Integer(left_int) => {
+                        left_int
+                            >= match right_value {
+                                Value::Integer(right_int) => right_int,
+                                _ => unimplemented!(),
+                            }
+                    }
+                    _ => unimplemented!(),
+                }),
+                BinaryOperator::Lt => Value::Boolean(match left_value {
+                    Value::Integer(left_int) => {
+                        left_int
+                            < match right_value {
+                                Value::Integer(right_int) => right_int,
+                                _ => unimplemented!(),
+                            }
+                    }
+                    _ => unimplemented!(),
+                }),
+                BinaryOperator::LtEq => Value::Boolean(match left_value {
+                    Value::Integer(left_int) => {
+                        left_int
+                            <= match right_value {
                                 Value::Integer(right_int) => right_int,
                                 _ => unimplemented!(),
                             }
