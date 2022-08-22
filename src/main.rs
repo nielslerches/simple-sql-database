@@ -10,11 +10,12 @@ use sqlparser::ast::{
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 enum Value {
     String(String),
     Boolean(bool),
     Integer(i64),
+    Null,
 }
 
 trait Relation: Iterator<Item = Vec<Value>> {
@@ -46,6 +47,8 @@ impl Iterator for SequentialScan {
                             Value::Boolean(boolean)
                         } else if let Ok(integer) = s.parse::<i64>() {
                             Value::Integer(integer)
+                        } else if s == "NULL".to_owned() {
+                            Value::Null
                         } else {
                             Value::String(s)
                         }
@@ -202,9 +205,33 @@ impl Relation for Selection {
 
 fn eval_expr_on_row(expr: Expr, relation_attributes: &Vec<String>, row: &Vec<Value>) -> Value {
     match expr {
+        Expr::IsFalse(expr) => {
+            Value::Boolean(
+                eval_expr_on_row(*expr, relation_attributes, row) == Value::Boolean(false)
+            )
+        }
+        Expr::IsTrue(expr) => {
+            Value::Boolean(
+                eval_expr_on_row(*expr, relation_attributes, row) == Value::Boolean(true)
+            )
+        }
+        Expr::IsNull(expr) => {
+            Value::Boolean(
+                eval_expr_on_row(*expr, relation_attributes, row) == Value::Null
+            )
+        }
+        Expr::IsNotNull(expr) => {
+            Value::Boolean(
+                eval_expr_on_row(*expr, relation_attributes, row) != Value::Null
+            )
+        }
         Expr::BinaryOp { left, op, right } => {
             let left_value = eval_expr_on_row(*left, relation_attributes, row);
             let right_value = eval_expr_on_row(*right, relation_attributes, row);
+
+            if left_value == Value::Null || right_value == Value::Null {
+                return Value::Null;
+            }
 
             match op {
                 BinaryOperator::And => Value::Boolean(
@@ -213,29 +240,7 @@ fn eval_expr_on_row(expr: Expr, relation_attributes: &Vec<String>, row: &Vec<Val
                 BinaryOperator::Or => Value::Boolean(
                     eval_value_as_bool(left_value.into()) || eval_value_as_bool(right_value.into()),
                 ),
-                BinaryOperator::Eq => Value::Boolean(match left_value {
-                    Value::Integer(left_int) => {
-                        left_int
-                            == match right_value {
-                                Value::Integer(right_int) => right_int,
-                                _ => unimplemented!(),
-                            }
-                    }
-                    Value::Boolean(left_bool) => {
-                        left_bool
-                            == match right_value {
-                                Value::Boolean(right_bool) => right_bool,
-                                _ => unimplemented!(),
-                            }
-                    }
-                    Value::String(left_string) => {
-                        left_string
-                            == match right_value {
-                                Value::String(right_string) => right_string,
-                                _ => unimplemented!(),
-                            }
-                    }
-                }),
+                BinaryOperator::Eq => Value::Boolean(left_value == right_value),
                 BinaryOperator::NotEq => Value::Boolean(match left_value {
                     Value::Integer(left_int) => {
                         left_int
@@ -258,6 +263,7 @@ fn eval_expr_on_row(expr: Expr, relation_attributes: &Vec<String>, row: &Vec<Val
                                 _ => unimplemented!(),
                             }
                     }
+                    _ => unreachable!()
                 }),
                 BinaryOperator::Gt => Value::Boolean(match left_value {
                     Value::Integer(left_int) => {
@@ -377,6 +383,7 @@ fn eval_value_as_bool(value: Value) -> bool {
         Value::Boolean(b) => b,
         Value::Integer(i) => i != 0,
         Value::String(s) => s.len() > 0,
+        Value::Null => false,
     }
 }
 
@@ -472,7 +479,9 @@ fn main() {
                             }
                         }
                         Value::Integer(i) => i.to_string(),
+                        Value::Null => "NULL".to_owned(),
                     }));
+
                     writer
                         .write_record(&record)
                         .expect("Could not write result to stdout.");
