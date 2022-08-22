@@ -91,31 +91,34 @@ impl Iterator for Projection {
                 for select_item in self.projected.iter() {
                     // TODO: handle arbitrary expressions.
 
-                    if *select_item == SelectItem::Wildcard {
-                        for attribute in &relation_attributes {
-                            let source_position = relation_attributes
-                                .iter()
-                                .position(|relation_attribute| relation_attribute.eq(attribute))
-                                .unwrap();
+                    match select_item {
+                        SelectItem::Wildcard => {
+                            for attribute in &relation_attributes {
+                                let source_position = relation_attributes
+                                    .iter()
+                                    .position(|relation_attribute| relation_attribute.eq(attribute))
+                                    .unwrap();
 
-                            item.push(relation_item.index(source_position).clone());
+                                item.push(relation_item.index(source_position).clone());
+                            }
                         }
-                    } else {
-                        let select_item_name = match select_item {
-                            SelectItem::ExprWithAlias { alias, .. } => alias.value.clone(),
-                            SelectItem::UnnamedExpr(expr) => match expr {
-                                Expr::Identifier(ident) => ident.value.clone(),
-                                _ => unreachable!(),
-                            },
-                            _ => unimplemented!(),
-                        };
-
-                        let source_position = relation_attributes
-                            .iter()
-                            .position(|relation_attribute| relation_attribute.eq(&select_item_name))
-                            .unwrap();
-
-                        item.push(relation_item.index(source_position).clone());
+                        SelectItem::UnnamedExpr(expr) => {
+                            let value = eval_expr_on_row(
+                                expr.clone(),
+                                &relation_attributes,
+                                &relation_item,
+                            );
+                            item.push(value);
+                        }
+                        SelectItem::ExprWithAlias { expr, .. } => {
+                            let value = eval_expr_on_row(
+                                expr.clone(),
+                                &relation_attributes,
+                                &relation_item,
+                            );
+                            item.push(value);
+                        }
+                        _ => unimplemented!(),
                     }
                 }
 
@@ -130,7 +133,7 @@ impl Relation for Projection {
     fn attributes(&mut self) -> Vec<String> {
         let mut attributes: Vec<String> = Vec::new();
 
-        for select_item in self.projected.iter() {
+        for (i, select_item) in self.projected.iter().enumerate() {
             match select_item {
                 SelectItem::ExprWithAlias { alias, .. } => {
                     attributes.push(alias.value.clone());
@@ -139,7 +142,9 @@ impl Relation for Projection {
                     Expr::Identifier(ident) => {
                         attributes.push(ident.value.clone());
                     }
-                    _ => unimplemented!(),
+                    _ => {
+                        attributes.push(i.to_string());
+                    }
                 },
                 SelectItem::Wildcard => {
                     for attribute in self.relation.attributes() {
@@ -288,6 +293,56 @@ fn eval_expr_on_row(expr: Expr, relation_attributes: &Vec<String>, row: &Vec<Val
                     Value::Integer(left_int) => {
                         left_int
                             <= match right_value {
+                                Value::Integer(right_int) => right_int,
+                                _ => unimplemented!(),
+                            }
+                    }
+                    _ => unimplemented!(),
+                }),
+                BinaryOperator::Plus => Value::Integer(match left_value {
+                    Value::Integer(left_int) => {
+                        left_int
+                            + match right_value {
+                                Value::Integer(right_int) => right_int,
+                                _ => unimplemented!(),
+                            }
+                    }
+                    _ => unimplemented!(),
+                }),
+                BinaryOperator::Minus => Value::Integer(match left_value {
+                    Value::Integer(left_int) => {
+                        left_int
+                            - match right_value {
+                                Value::Integer(right_int) => right_int,
+                                _ => unimplemented!(),
+                            }
+                    }
+                    _ => unimplemented!(),
+                }),
+                BinaryOperator::Multiply => Value::Integer(match left_value {
+                    Value::Integer(left_int) => {
+                        left_int
+                            * match right_value {
+                                Value::Integer(right_int) => right_int,
+                                _ => unimplemented!(),
+                            }
+                    }
+                    _ => unimplemented!(),
+                }),
+                BinaryOperator::Divide => Value::Integer(match left_value {
+                    Value::Integer(left_int) => {
+                        left_int
+                            / match right_value {
+                                Value::Integer(right_int) => right_int,
+                                _ => unimplemented!(),
+                            }
+                    }
+                    _ => unimplemented!(),
+                }),
+                BinaryOperator::Modulo => Value::Integer(match left_value {
+                    Value::Integer(left_int) => {
+                        left_int
+                            % match right_value {
                                 Value::Integer(right_int) => right_int,
                                 _ => unimplemented!(),
                             }
