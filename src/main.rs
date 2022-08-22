@@ -205,25 +205,17 @@ impl Relation for Selection {
 
 fn eval_expr_on_row(expr: Expr, relation_attributes: &Vec<String>, row: &Vec<Value>) -> Value {
     match expr {
-        Expr::IsFalse(expr) => {
-            Value::Boolean(
-                eval_expr_on_row(*expr, relation_attributes, row) == Value::Boolean(false)
-            )
-        }
-        Expr::IsTrue(expr) => {
-            Value::Boolean(
-                eval_expr_on_row(*expr, relation_attributes, row) == Value::Boolean(true)
-            )
-        }
+        Expr::IsFalse(expr) => Value::Boolean(
+            eval_expr_on_row(*expr, relation_attributes, row) == Value::Boolean(false),
+        ),
+        Expr::IsTrue(expr) => Value::Boolean(
+            eval_expr_on_row(*expr, relation_attributes, row) == Value::Boolean(true),
+        ),
         Expr::IsNull(expr) => {
-            Value::Boolean(
-                eval_expr_on_row(*expr, relation_attributes, row) == Value::Null
-            )
+            Value::Boolean(eval_expr_on_row(*expr, relation_attributes, row) == Value::Null)
         }
         Expr::IsNotNull(expr) => {
-            Value::Boolean(
-                eval_expr_on_row(*expr, relation_attributes, row) != Value::Null
-            )
+            Value::Boolean(eval_expr_on_row(*expr, relation_attributes, row) != Value::Null)
         }
         Expr::BinaryOp { left, op, right } => {
             let left_value = eval_expr_on_row(*left, relation_attributes, row);
@@ -263,7 +255,7 @@ fn eval_expr_on_row(expr: Expr, relation_attributes: &Vec<String>, row: &Vec<Val
                                 _ => unimplemented!(),
                             }
                     }
-                    _ => unreachable!()
+                    _ => unreachable!(),
                 }),
                 BinaryOperator::Gt => Value::Boolean(match left_value {
                     Value::Integer(left_int) => {
