@@ -10,7 +10,7 @@ use sqlparser::ast::{
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, PartialOrd)]
 enum Value {
     String(String),
     Boolean(bool),
@@ -233,70 +233,11 @@ fn eval_expr_on_row(expr: Expr, relation_attributes: &Vec<String>, row: &Vec<Val
                     eval_value_as_bool(left_value.into()) || eval_value_as_bool(right_value.into()),
                 ),
                 BinaryOperator::Eq => Value::Boolean(left_value == right_value),
-                BinaryOperator::NotEq => Value::Boolean(match left_value {
-                    Value::Integer(left_int) => {
-                        left_int
-                            != match right_value {
-                                Value::Integer(right_int) => right_int,
-                                _ => unimplemented!(),
-                            }
-                    }
-                    Value::Boolean(left_bool) => {
-                        left_bool
-                            != match right_value {
-                                Value::Boolean(right_bool) => right_bool,
-                                _ => unimplemented!(),
-                            }
-                    }
-                    Value::String(left_string) => {
-                        left_string
-                            != match right_value {
-                                Value::String(right_string) => right_string,
-                                _ => unimplemented!(),
-                            }
-                    }
-                    _ => unreachable!(),
-                }),
-                BinaryOperator::Gt => Value::Boolean(match left_value {
-                    Value::Integer(left_int) => {
-                        left_int
-                            > match right_value {
-                                Value::Integer(right_int) => right_int,
-                                _ => unimplemented!(),
-                            }
-                    }
-                    _ => unimplemented!(),
-                }),
-                BinaryOperator::GtEq => Value::Boolean(match left_value {
-                    Value::Integer(left_int) => {
-                        left_int
-                            >= match right_value {
-                                Value::Integer(right_int) => right_int,
-                                _ => unimplemented!(),
-                            }
-                    }
-                    _ => unimplemented!(),
-                }),
-                BinaryOperator::Lt => Value::Boolean(match left_value {
-                    Value::Integer(left_int) => {
-                        left_int
-                            < match right_value {
-                                Value::Integer(right_int) => right_int,
-                                _ => unimplemented!(),
-                            }
-                    }
-                    _ => unimplemented!(),
-                }),
-                BinaryOperator::LtEq => Value::Boolean(match left_value {
-                    Value::Integer(left_int) => {
-                        left_int
-                            <= match right_value {
-                                Value::Integer(right_int) => right_int,
-                                _ => unimplemented!(),
-                            }
-                    }
-                    _ => unimplemented!(),
-                }),
+                BinaryOperator::NotEq => Value::Boolean(left_value != right_value),
+                BinaryOperator::Gt => Value::Boolean(left_value > right_value),
+                BinaryOperator::GtEq => Value::Boolean(left_value >= right_value),
+                BinaryOperator::Lt => Value::Boolean(left_value < right_value),
+                BinaryOperator::LtEq => Value::Boolean(left_value <= right_value),
                 BinaryOperator::Plus => Value::Integer(match left_value {
                     Value::Integer(left_int) => {
                         left_int
